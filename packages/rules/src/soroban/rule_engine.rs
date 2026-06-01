@@ -2,6 +2,7 @@
 //!
 //! This module provides a specialized rule engine for analyzing Soroban smart contracts.
 
+use crate::soroban::memory::InefficientBytesAllocationRule;
 use crate::soroban::{SorobanAnalyzer, SorobanContract, SorobanParser, SorobanResult};
 use crate::{RuleViolation, ViolationSeverity};
 use std::collections::HashMap;
@@ -45,7 +46,8 @@ impl SorobanRuleEngine {
             .add_rule(MissingConstructorRule::default())
             .add_rule(AdminPatternRule::default())
             .add_rule(InefficientIntegerTypesRule::default())
-            .add_rule(MissingErrorHandlingRule::default());
+            .add_rule(MissingErrorHandlingRule::default())
+            .add_rule(InefficientBytesAllocationRule::default());
     }
     
     /// Analyze Soroban contract source code
