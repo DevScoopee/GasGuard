@@ -143,6 +143,26 @@ export class SolidityAnalyzer extends BaseAnalyzer implements Analyzer {
       },
     },
     {
+      id: 'sol-013',
+      name: 'Unsafe Timestamp Dependency',
+      description: 'Detects use of block.timestamp or now in control flow and warns when critical logic depends on manipulable timestamps.',
+      severity: Severity.HIGH,
+      category: 'security',
+      enabled: true,
+      tags: ['security', 'timestamp', 'blockchain', 'time-dependency'],
+      documentationUrl: 'https://docs.gasguard.dev/rules/sol-013',
+    },
+    {
+      id: 'sol-014',
+      name: 'Insecure tx.origin Authentication',
+      description: 'Detects tx.origin usage in authentication or authorization checks and suggests using msg.sender instead.',
+      severity: Severity.HIGH,
+      category: 'security',
+      enabled: true,
+      tags: ['security', 'authentication', 'tx-origin', 'msg-sender'],
+      documentationUrl: 'https://docs.gasguard.dev/rules/sol-014',
+    },
+    {
       id: 'sol-012',
       name: 'Missing Event Emission',
       description: 'Detects state-changing functions that do not emit events',
@@ -325,6 +345,46 @@ export class SolidityAnalyzer extends BaseAnalyzer implements Analyzer {
             description: 'Use a timelock flow: schedule operation, enforce delay with block.timestamp checks, and execute after delay with role-based access control',
             codeSnippet: 'bytes32 opId = keccak256(data);\npendingOperations[opId] = block.timestamp + TIMELOCK_DELAY;\nemit OperationScheduled(opId, pendingOperations[opId]);\n\nrequire(block.timestamp >= pendingOperations[opId], "Timelock not expired");\nexecuteOperation(opId);\nemit OperationExecuted(opId);',
             documentationUrl: 'https://docs.gasguard.dev/rules/sol-009',
+          },
+        })));
+      }
+
+      // Rule: sol-013 - Unsafe Timestamp Dependency
+      if (this.isRuleEnabled('sol-013', config)) {
+        const timestampDependencies = this.detectTimestampDependencies(code);
+        findings.push(...timestampDependencies.map(location => ({
+          ruleId: 'sol-013',
+          message: location.message,
+          severity: this.getRuleSeverity('sol-013', config),
+          location: {
+            file: filePath,
+            startLine: location.startLine,
+            endLine: location.endLine,
+          },
+          suggestedFix: {
+            description: 'Avoid using block.timestamp or now for critical control flow. Use a secure timelock, on-chain delay based on block.number, or an oracle-backed time source.',
+            codeSnippet: 'require(block.timestamp >= unlockTime, "Too early"); // avoid relying on timestamp for security-critical decisions',
+            documentationUrl: 'https://docs.gasguard.dev/rules/sol-013',
+          },
+        })));
+      }
+
+      // Rule: sol-014 - Insecure tx.origin Authentication
+      if (this.isRuleEnabled('sol-014', config)) {
+        const txOriginFindings = this.detectTxOriginUsage(code);
+        findings.push(...txOriginFindings.map(location => ({
+          ruleId: 'sol-014',
+          message: location.message,
+          severity: this.getRuleSeverity('sol-014', config),
+          location: {
+            file: filePath,
+            startLine: location.startLine,
+            endLine: location.endLine,
+          },
+          suggestedFix: {
+            description: 'Use msg.sender for authentication and authorization checks instead of tx.origin to prevent phishing and contract-based attacks.',
+            codeSnippet: 'require(msg.sender == owner, "Unauthorized");',
+            documentationUrl: 'https://docs.gasguard.dev/rules/sol-014',
           },
         })));
       }
@@ -636,6 +696,93 @@ export class SolidityAnalyzer extends BaseAnalyzer implements Analyzer {
         }
       }
     });
+
+    return findings;
+  }
+
+  private detectTimestampDependencies(
+    code: string,
+  ): Array<{ startLine: number; endLine: number; message: string }> {
+    const findings: Array<{ startLine: number; endLine: number; message: string }> = [];
+    const lines = code.split('\n');
+    let inBlockComment = false;
+
+    const timestampPattern = /\b(?:block\.timestamp|now)\b/;
+    const eventEmissionPattern = /\bemit\b/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith('/*') || trimmed.startsWith('/**')) {
+        inBlockComment = true;
+      }
+      if (inBlockComment) {
+        if (trimmed.includes('*/')) {
+          inBlockComment = false;
+        }
+        continue;
+      }
+
+      if (trimmed.startsWith('//')) {
+        continue;
+      }
+
+      if (!timestampPattern.test(line)) {
+        continue;
+      }
+
+      if (eventEmissionPattern.test(line)) {
+        continue;
+      }
+
+      findings.push({
+        startLine: i + 1,
+        endLine: i + 1,
+        message:
+          'Unsafe reliance on block.timestamp/now detected. Block timestamps are manipulable by miners, so avoid using them for critical control flow.',
+      });
+    }
+
+    return findings;
+  }
+
+  private detectTxOriginUsage(
+    code: string,
+  ): Array<{ startLine: number; endLine: number; message: string }> {
+    const findings: Array<{ startLine: number; endLine: number; message: string }> = [];
+    const lines = code.split('\n');
+    let inBlockComment = false;
+
+    const txOriginPattern = /\btx\.origin\b/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith('/*') || trimmed.startsWith('/**')) {
+        inBlockComment = true;
+      }
+      if (inBlockComment) {
+        if (trimmed.includes('*/')) {
+          inBlockComment = false;
+        }
+        continue;
+      }
+
+      if (trimmed.startsWith('//')) {
+        continue;
+      }
+
+      if (txOriginPattern.test(line)) {
+        findings.push({
+          startLine: i + 1,
+          endLine: i + 1,
+          message:
+            'Insecure tx.origin authentication detected. Use msg.sender instead of tx.origin for authorization checks.',
+        });
+      }
+    }
 
     return findings;
   }
