@@ -186,3 +186,49 @@ impl SorobanLintRule for EventEmissionRule {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_iteration_rule_detects_map_loop() {
+        let source = r#"
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Map};
+
+#[contractimpl]
+impl MyContract {
+    pub fn scan_map(&self, env: Env, data: Map<Address, u64>) {
+        for (key, value) in data.iter() {
+            let _ = key;
+            let _ = value;
+        }
+    }
+}
+"#;
+
+        let violations = MapIterationRule.check(&MapIterationRule, source, "test.rs");
+        assert!(violations.is_some());
+        let violations = violations.unwrap();
+        assert!(violations.iter().any(|v| v.rule_name == "soroban-map-iteration"));
+    }
+
+    #[test]
+    fn test_map_iteration_rule_ignores_non_map_loops() {
+        let source = r#"
+use soroban_sdk::{contract, contractimpl, contracttype, Address};
+
+#[contractimpl]
+impl MyContract {
+    pub fn count(&self) {
+        for i in 0..10 {
+            let _ = i;
+        }
+    }
+}
+"#;
+
+        let violations = MapIterationRule.check(&MapIterationRule, source, "test.rs");
+        assert!(violations.is_none());
+    }
+}
